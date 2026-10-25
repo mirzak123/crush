@@ -28,6 +28,7 @@ type litellmModelMeta struct {
 	MaxOutputTokens    *int64   `json:"max_output_tokens"`
 	InputCostPerToken  *float64 `json:"input_cost_per_token"`
 	OutputCostPerToken *float64 `json:"output_cost_per_token"`
+	SupportsVision     bool     `json:"supports_vision,omitempty"`
 	Mode               string   `json:"mode"`
 }
 
@@ -80,6 +81,9 @@ func (e *litellmEnricher) EnrichModels(ctx context.Context, cfg Config, resolver
 		}
 		if models[i].CostPer1MOut == 0 && meta.OutputCostPerToken != nil {
 			models[i].CostPer1MOut = *meta.OutputCostPerToken * 1_000_000
+		}
+		if !models[i].SupportsImages && meta.SupportsVision {
+			models[i].SupportsImages = true
 		}
 	}
 
