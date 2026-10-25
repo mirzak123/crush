@@ -29,6 +29,7 @@ type litellmModelMeta struct {
 	InputCostPerToken  *float64 `json:"input_cost_per_token"`
 	OutputCostPerToken *float64 `json:"output_cost_per_token"`
 	SupportsVision     bool     `json:"supports_vision,omitempty"`
+	SupportsReasoning  bool     `json:"supports_reasoning"`
 	Mode               string   `json:"mode"`
 }
 
@@ -84,6 +85,9 @@ func (e *litellmEnricher) EnrichModels(ctx context.Context, cfg Config, resolver
 		}
 		if !models[i].SupportsImages && meta.SupportsVision {
 			models[i].SupportsImages = true
+		}
+		if !models[i].CanReason && meta.SupportsReasoning {
+			models[i].CanReason = true
 		}
 	}
 
