@@ -107,6 +107,81 @@ func TestLitellmEnricher(t *testing.T) {
 		require.Equal(t, "GPT-4o Custom", result[0].Name)
 	})
 
+	t.Run("populates vision and reasoning capabilities", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"data": [
+					{
+						"model_name": "gpt-4o",
+						"model_info": {
+							"supports_vision": true,
+							"supports_reasoning": true
+						}
+					},
+					{
+						"model_name": "text-only",
+						"model_info": {}
+					}
+				]
+			}`))
+		}))
+		defer srv.Close()
+
+		cfg := Config{
+			ID:      "test-litellm",
+			BaseURL: srv.URL,
+		}
+		models := []catwalk.Model{
+			{ID: "gpt-4o", Name: "gpt-4o"},
+			{ID: "text-only", Name: "text-only"},
+		}
+
+		e := &litellmEnricher{}
+		result, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		require.NoError(t, err)
+
+		require.True(t, result[0].SupportsImages)
+		require.True(t, result[0].CanReason)
+
+		// Models that report no capabilities keep their defaults.
+		require.False(t, result[1].SupportsImages)
+		require.False(t, result[1].CanReason)
+	})
+
+	t.Run("does not override user-set capabilities", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"data": [{
+					"model_name": "gpt-4o",
+					"model_info": {
+						"supports_vision": false,
+						"supports_reasoning": false
+					}
+				}]
+			}`))
+		}))
+		defer srv.Close()
+
+		cfg := Config{
+			ID:      "test-litellm",
+			BaseURL: srv.URL,
+		}
+		models := []catwalk.Model{
+			{ID: "gpt-4o", Name: "gpt-4o", SupportsImages: true, CanReason: true},
+		}
+
+		e := &litellmEnricher{}
+		result, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		require.NoError(t, err)
+
+		require.True(t, result[0].SupportsImages)
+		require.True(t, result[0].CanReason)
+	})
+
 	t.Run("returns models unchanged on HTTP error", func(t *testing.T) {
 		t.Parallel()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
