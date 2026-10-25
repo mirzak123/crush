@@ -28,7 +28,7 @@ type litellmModelMeta struct {
 	MaxOutputTokens    *int64   `json:"max_output_tokens"`
 	InputCostPerToken  *float64 `json:"input_cost_per_token"`
 	OutputCostPerToken *float64 `json:"output_cost_per_token"`
-	SupportsVision     bool     `json:"supports_vision,omitempty"`
+	SupportsVision     bool     `json:"supports_vision"`
 	SupportsReasoning  bool     `json:"supports_reasoning"`
 	Mode               string   `json:"mode"`
 }
