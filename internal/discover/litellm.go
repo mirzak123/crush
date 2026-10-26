@@ -24,13 +24,18 @@ type litellmModelInfo struct {
 // litellmModelMeta holds the metadata fields we care about from
 // LiteLLM's model_info block.
 type litellmModelMeta struct {
-	MaxInputTokens     *int64   `json:"max_input_tokens"`
-	MaxOutputTokens    *int64   `json:"max_output_tokens"`
-	InputCostPerToken  *float64 `json:"input_cost_per_token"`
-	OutputCostPerToken *float64 `json:"output_cost_per_token"`
-	SupportsVision     bool     `json:"supports_vision"`
-	SupportsReasoning  bool     `json:"supports_reasoning"`
-	Mode               string   `json:"mode"`
+	MaxInputTokens              *int64   `json:"max_input_tokens"`
+	MaxOutputTokens             *int64   `json:"max_output_tokens"`
+	MaxTokens                   *int64   `json:"max_tokens"`
+	InputCostPerToken           *float64 `json:"input_cost_per_token"`
+	OutputCostPerToken          *float64 `json:"output_cost_per_token"`
+	CacheCreationInputTokenCost *float64 `json:"cache_creation_input_token_cost"`
+	CacheReadInputTokenCost     *float64 `json:"cache_read_input_token_cost"`
+	SupportsVision              bool     `json:"supports_vision"`
+	SupportsReasoning           bool     `json:"supports_reasoning"`
+	ReasoningEffortLevels       []string `json:"reasoning_effort_levels"`
+	DefaultReasoningEffort      string   `json:"default_reasoning_effort"`
+	Mode                        string   `json:"mode"`
 }
 
 func init() {
@@ -38,8 +43,8 @@ func init() {
 }
 
 // litellmEnricher fetches model metadata from LiteLLM's /model/info
-// endpoint and populates context window, max tokens, and pricing on
-// discovered models.
+// endpoint and populates context window, max tokens, pricing, and
+// capabilities on discovered models.
 type litellmEnricher struct{}
 
 func (e *litellmEnricher) EnrichModels(ctx context.Context, cfg Config, resolver Resolver, models []catwalk.Model) ([]catwalk.Model, error) {
@@ -77,17 +82,32 @@ func (e *litellmEnricher) EnrichModels(ctx context.Context, cfg Config, resolver
 		if models[i].DefaultMaxTokens == 0 && meta.MaxOutputTokens != nil {
 			models[i].DefaultMaxTokens = *meta.MaxOutputTokens
 		}
+		if models[i].DefaultMaxTokens == 0 && meta.MaxTokens != nil {
+			models[i].DefaultMaxTokens = *meta.MaxTokens
+		}
 		if models[i].CostPer1MIn == 0 && meta.InputCostPerToken != nil {
 			models[i].CostPer1MIn = *meta.InputCostPerToken * 1_000_000
 		}
 		if models[i].CostPer1MOut == 0 && meta.OutputCostPerToken != nil {
 			models[i].CostPer1MOut = *meta.OutputCostPerToken * 1_000_000
 		}
+		if models[i].CostPer1MInCached == 0 && meta.CacheCreationInputTokenCost != nil {
+			models[i].CostPer1MInCached = *meta.CacheCreationInputTokenCost * 1_000_000
+		}
+		if models[i].CostPer1MOutCached == 0 && meta.CacheReadInputTokenCost != nil {
+			models[i].CostPer1MOutCached = *meta.CacheReadInputTokenCost * 1_000_000
+		}
 		if !models[i].SupportsImages && meta.SupportsVision {
 			models[i].SupportsImages = true
 		}
 		if !models[i].CanReason && meta.SupportsReasoning {
 			models[i].CanReason = true
+		}
+		if len(models[i].ReasoningLevels) == 0 && len(meta.ReasoningEffortLevels) > 0 {
+			models[i].ReasoningLevels = meta.ReasoningEffortLevels
+		}
+		if models[i].DefaultReasoningEffort == "" && meta.DefaultReasoningEffort != "" {
+			models[i].DefaultReasoningEffort = meta.DefaultReasoningEffort
 		}
 	}
 

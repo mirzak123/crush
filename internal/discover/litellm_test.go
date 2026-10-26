@@ -145,7 +145,6 @@ func TestLitellmEnricher(t *testing.T) {
 		require.True(t, result[0].SupportsImages)
 		require.True(t, result[0].CanReason)
 
-		// Models that report no capabilities keep their defaults.
 		require.False(t, result[1].SupportsImages)
 		require.False(t, result[1].CanReason)
 	})
@@ -180,6 +179,106 @@ func TestLitellmEnricher(t *testing.T) {
 
 		require.True(t, result[0].SupportsImages)
 		require.True(t, result[0].CanReason)
+	})
+
+	t.Run("populates cached pricing", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"data": [{
+					"model_name": "claude-sonnet",
+					"model_info": {
+						"input_cost_per_token": 3e-06,
+						"output_cost_per_token": 1.5e-05,
+						"cache_creation_input_token_cost": 3.75e-06,
+						"cache_read_input_token_cost": 3e-07
+					}
+				}]
+			}`))
+		}))
+		defer srv.Close()
+
+		cfg := Config{
+			ID:      "test-litellm",
+			BaseURL: srv.URL,
+		}
+		models := []catwalk.Model{{ID: "claude-sonnet", Name: "claude-sonnet"}}
+
+		e := &litellmEnricher{}
+		result, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		require.NoError(t, err)
+
+		require.InDelta(t, 3.75, result[0].CostPer1MInCached, 0.01)
+		require.InDelta(t, 0.3, result[0].CostPer1MOutCached, 0.01)
+	})
+
+	t.Run("populates reasoning levels and default effort", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"data": [{
+					"model_name": "glm-5.3",
+					"model_info": {
+						"supports_reasoning": true,
+						"reasoning_effort_levels": ["low", "high", "max"],
+						"default_reasoning_effort": "high"
+					}
+				}]
+			}`))
+		}))
+		defer srv.Close()
+
+		cfg := Config{
+			ID:      "test-litellm",
+			BaseURL: srv.URL,
+		}
+		models := []catwalk.Model{{ID: "glm-5.3", Name: "glm-5.3"}}
+
+		e := &litellmEnricher{}
+		result, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		require.NoError(t, err)
+
+		require.True(t, result[0].CanReason)
+		require.Equal(t, []string{"low", "high", "max"}, result[0].ReasoningLevels)
+		require.Equal(t, "high", result[0].DefaultReasoningEffort)
+	})
+
+	t.Run("falls back to max_tokens for max output tokens", func(t *testing.T) {
+		t.Parallel()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"data": [
+					{
+						"model_name": "legacy-model",
+						"model_info": {"max_tokens": 8192}
+					},
+					{
+						"model_name": "modern-model",
+						"model_info": {"max_tokens": 8192, "max_output_tokens": 4096}
+					}
+				]
+			}`))
+		}))
+		defer srv.Close()
+
+		cfg := Config{
+			ID:      "test-litellm",
+			BaseURL: srv.URL,
+		}
+		models := []catwalk.Model{
+			{ID: "legacy-model", Name: "legacy-model"},
+			{ID: "modern-model", Name: "modern-model"},
+		}
+
+		e := &litellmEnricher{}
+		result, err := e.EnrichModels(context.Background(), cfg, &mockResolver{}, models)
+		require.NoError(t, err)
+
+		require.Equal(t, int64(8192), result[0].DefaultMaxTokens)
+		require.Equal(t, int64(4096), result[1].DefaultMaxTokens)
 	})
 
 	t.Run("returns models unchanged on HTTP error", func(t *testing.T) {
